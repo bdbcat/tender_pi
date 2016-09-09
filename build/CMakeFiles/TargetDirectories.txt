@@ -1,0 +1,4 @@
+/home/dsr/Projects/tender_pi/build/CMakeFiles/tender-i18n.dir
+/home/dsr/Projects/tender_pi/build/CMakeFiles/tender-po-update.dir
+/home/dsr/Projects/tender_pi/build/CMakeFiles/tender-pot-update.dir
+/home/dsr/Projects/tender_pi/build/CMakeFiles/tender_pi.dir
