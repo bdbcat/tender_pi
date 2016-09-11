@@ -263,6 +263,10 @@ private:
      wxString               m_tenderIconType;
      PlugIn_Waypoint        m_TrackedWP;
      
+     RolloverWin            *m_pTrackRolloverWin;
+
+     DECLARE_EVENT_TABLE();
+     
 };
 
 

@@ -97,7 +97,7 @@ void RolloverWin::SetBitmap( int rollover )
 
 //    ocpnDC dc( mdc );
 
-    AlphaBlending( &mdc, 0, 0, m_size.x, m_size.y, 6.0, wxTheColourDatabase->Find(_T("YELLOW")), 172 );
+    AlphaBlending( &mdc, 0, 0, m_size.x, m_size.y, 6.0, wxTheColourDatabase->Find(_T("YELLOW")), 250 );
  //   mdc.SetTextForeground( FontMgr::Get().GetFontColor( _("AISRollover") ) );
 
     if(m_plabelFont && m_plabelFont->IsOk()) {
@@ -171,3 +171,31 @@ void RolloverWin::SetBestPosition( int x, int y, int off_x, int off_y, int rollo
     SetPosition( wxPoint( xp, yp ) );
 }
 
+void RolloverWin::SetBestSize( )
+{
+    
+    int h, w;
+    
+    wxFont dFont = GetFont();
+    
+    int font_size = wxMax(20, dFont.GetPointSize());
+    m_plabelFont = wxTheFontList->FindOrCreateFont( font_size, dFont.GetFamily(),
+                                                    dFont.GetStyle(), dFont.GetWeight(), false, dFont.GetFaceName() );
+    
+    if(m_plabelFont && m_plabelFont->IsOk()) {
+        #ifdef __WXMAC__
+        wxScreenDC sdc;
+        sdc.GetMultiLineTextExtent(m_string, &w, &h, NULL, m_plabelFont);
+        #else
+        wxClientDC cdc( GetParent() );
+        cdc.GetMultiLineTextExtent( m_string, &w, &h, NULL, m_plabelFont );
+        #endif
+    }
+    else {
+        w = 10;
+        h = 10;
+    }
+    
+    m_size.x = w + 8;
+    m_size.y = h + 8;
+}

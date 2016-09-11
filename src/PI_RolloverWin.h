@@ -29,6 +29,7 @@
 
 #define ROLLOVER_TIMER 5000
 #define HEAD_DOG_TIMER 5001
+#define TIMER_THIS_PI 5002
 
 class RolloverWin: public wxWindow
 {
@@ -49,7 +50,8 @@ public:
     void SetMousePropogation( int level ) { m_mmouse_propogate = level; }
     bool IsActive() { return isActive; }
     void IsActive( bool state ) { isActive = state; }
-
+    void SetBestSize( );
+    
 private:
     wxString m_string;
     wxSize m_size;

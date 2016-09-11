@@ -74,6 +74,8 @@ wxGraphicsContext       *g_gdc;
 wxDC                    *g_pdc;
 
 wxArrayString           g_iconTypeArray;
+int                     gHDT_Watchdog;
+int                     gGPS_Watchdog;
 
 static int s_ownship_icon[] = { 5, -42, 11, -28, 11, 42, -11, 42, -11, -28, -5, -42, -11, 0, 11, 0,
 0, 42, 0, -42
@@ -184,6 +186,11 @@ void Clone_VP(PlugIn_ViewPort *dest, PlugIn_ViewPort *src)
 //
 //---------------------------------------------------------------------------------------------------------
 
+//      Event Handler implementation
+BEGIN_EVENT_TABLE ( tender_pi, wxEvtHandler )
+EVT_TIMER ( TIMER_THIS_PI, tender_pi::ProcessTimerEvent )
+END_EVENT_TABLE()
+
 tender_pi::tender_pi( void *ppimgr ) :
         wxTimer( this ), opencpn_plugin_112( ppimgr )
 {
@@ -214,6 +221,9 @@ int tender_pi::Init( void )
     mPriHeadingM = 9;
     mPriHeadingT = 9;
     
+    gHDT_Watchdog = 10;
+    gGPS_Watchdog = 10;
+    
     mVar = 0;
     m_hdt = 0;
     m_ownship_cog = 0;
@@ -242,20 +252,20 @@ int tender_pi::Init( void )
     //    And load the configuration items
     LoadConfig();
     
+    m_pTrackRolloverWin = new RolloverWin( GetOCPNCanvasWindow() );
+    m_pTrackRolloverWin->SetPosition( wxPoint( 5, 150 ) );
+    m_pTrackRolloverWin->IsActive( false );
+    
+//     m_pTrackRolloverWin->SetString( _T("Brg:   0\nDist:   0") );
+//     m_pTrackRolloverWin->SetBestSize();
+//     m_pTrackRolloverWin->SetBitmap( 0 );
+//     m_pTrackRolloverWin->SetPosition( wxPoint( 5, 50 ) );
+//     
+//     m_pTrackRolloverWin->IsActive( true );
     
 
-    //    This PlugIn needs a toolbar icon
-//    m_toolbar_item_id = InsertPlugInTool( _T(""), _img_dashboard, _img_dashboard, wxITEM_CHECK,
-//            _("Dashboard"), _T(""), NULL, EPL_TOOL_POSITION, 0, this );
-
-//    ApplyConfig();
-
-    //  If we loaded a version 1 config setup, convert now to version 2
-//    if(m_config_version == 1) {
- //       SaveConfig();
-//    }
-
-//    Start( 1000, wxTIMER_CONTINUOUS );
+    SetOwner(this, TIMER_THIS_PI);
+    Start( 1000, wxTIMER_CONTINUOUS );
 
 #ifndef __WXMSW__
     wxEVT_PI_OCPN_DATASTREAM = wxNewEventType();
@@ -699,6 +709,44 @@ void tender_pi::ProcessTimerEvent( wxTimerEvent& event )
         OnRolloverPopupTimerEvent( event );
     else if(event.GetId() == HEAD_DOG_TIMER)    // no hdt source available
         m_head_active = false;
+    
+    else{
+        if(gGPS_Watchdog++ > 5)
+            pos_valid = false;
+        
+        //  Every tick, get a fresh copy of the tracked waypoint, in case it got moved.
+        GetSingleWaypoint( m_trackedWPGUID, &m_TrackedWP );
+
+        //  Update the continuos tracking popup
+        double brg, dist;
+        DistanceBearingMercator(  m_TrackedWP.m_lat, m_TrackedWP.m_lon, gLat, gLon, &brg, &dist );
+        
+        if(dist < 1.0){
+            wxString s;
+            s << wxString::Format( wxString("Tracked Bearing:  %03d°  \n", wxConvUTF8 ), (int)brg  );
+            
+            if(dist > 0.5)
+                s << wxString::Format( wxString("Tracked Distance: %2.1f NMi  ", wxConvUTF8 ), dist  );
+            else
+                s << wxString::Format( wxString("Tracked Distance: %4d Ft.  ", wxConvUTF8 ), (int)(dist * 6076.0)  );
+            
+            m_pTrackRolloverWin->SetString( s );
+            m_pTrackRolloverWin->SetBestSize();
+            m_pTrackRolloverWin->SetBitmap( 0 );
+            m_pTrackRolloverWin->SetPosition( wxPoint( 5, 150 ) );
+            
+            m_pTrackRolloverWin->IsActive( true );
+        }
+        else
+            m_pTrackRolloverWin->IsActive( false );
+        
+    
+        m_select->DeleteSelectablePoint( this, SELTYPE_POINT_GENERIC, SELTYPE_ROUTEPOINT );
+        m_select->AddSelectablePoint( m_TrackedWP.m_lat, m_TrackedWP.m_lon, this, SELTYPE_ROUTEPOINT, 0 );
+    }
+    
+    RequestRefresh(GetOCPNCanvasWindow());
+    
 }
 
 
@@ -740,7 +788,7 @@ void tender_pi::OnRolloverPopupTimerEvent( wxTimerEvent& event )
 //                    s = _T("Test Rollover");
                     
                     double brg, dist;
-                    DistanceBearingMercator( gLat, gLon, m_TrackedWP.m_lat, m_TrackedWP.m_lon,  &brg, &dist );
+                    DistanceBearingMercator(  m_TrackedWP.m_lat, m_TrackedWP.m_lon, gLat, gLon, &brg, &dist );
                     
                     s << wxString::Format( wxString("Tracked Bearing:  %03d°  \n", wxConvUTF8 ), (int)brg  );
                     
@@ -750,56 +798,8 @@ void tender_pi::OnRolloverPopupTimerEvent( wxTimerEvent& event )
                         s << wxString::Format( wxString("Tracked Distance: %4d Ft.  ", wxConvUTF8 ), (int)(dist * 6076.0)  );
                     
                     
-#if 0                    
-                    RoutePoint *segShow_point_a = (RoutePoint *) m_pRolloverRouteSeg->m_pData1;
-                    RoutePoint *segShow_point_b = (RoutePoint *) m_pRolloverRouteSeg->m_pData2;
-                    
-                    double brg, dist;
-                    DistanceBearingMercator( segShow_point_b->m_lat, segShow_point_b->m_lon,
-                                             segShow_point_a->m_lat, segShow_point_a->m_lon, &brg, &dist );
-                    
-                    if( !pr->m_bIsInLayer )
-                        s.Append( _("Route: ") );
-                    else
-                        s.Append( _("Layer Route: ") );
-                    
-                    if( pr->m_RouteNameString.IsEmpty() ) s.Append( _("(unnamed)") );
-                    else
-                        s.Append( pr->m_RouteNameString );
-                    
-                    s << _T("\n") << _("Total Length: ") << FormatDistanceAdaptive( pr->m_route_length)
-                    << _T("\n") << _("Leg: from ") << segShow_point_a->GetName()
-                    << _(" to ") << segShow_point_b->GetName()
-                    << _T("\n");
-                    
-                    if( g_bShowMag )
-                        s << wxString::Format( wxString("%03d°(M)  ", wxConvUTF8 ), (int)gFrame->GetTrueOrMag( brg ) );
-                    else
-                        s << wxString::Format( wxString("%03d°  ", wxConvUTF8 ), (int)gFrame->GetTrueOrMag( brg ) );
-                    
-                    s << FormatDistanceAdaptive( dist );
-                    
-                    // Compute and display cumulative distance from route start point to current
-                    // leg end point.
-                    
-                    if( segShow_point_a != pr->pRoutePointList->GetFirst()->GetData() ) {
-                        wxRoutePointListNode *node = (pr->pRoutePointList)->GetFirst()->GetNext();
-                        RoutePoint *prp;
-                        float dist_to_endleg = 0;
-                        wxString t;
-                        
-                        while( node ) {
-                            prp = node->GetData();
-                            dist_to_endleg += prp->m_seg_len;
-                            if( prp->IsSame( segShow_point_a ) ) break;
-                            node = node->GetNext();
-                        }
-                        s << _T(" (+") << FormatDistanceAdaptive( dist_to_endleg ) << _T(")");
-                    }
-#endif                    
                     m_pBrgRolloverWin->SetString( s );
                     
-//                    wxSize win_size = GetSize();
                     m_pBrgRolloverWin->SetBestPosition( m_mouse_x, m_mouse_y, 16, 16, 0, wxSize(100, 100));
                     m_pBrgRolloverWin->SetBitmap( 0 );
                     m_pBrgRolloverWin->IsActive( true );
@@ -985,7 +985,13 @@ void tender_pi::RenderIconDC(wxDC &dc )
         
         wxColour tenderColor;
         GetGlobalColor( _T ( "UGREN" ), &tenderColor);
-        dc.SetBrush( wxBrush( tenderColor ) );
+        if(pos_valid){
+             dc.SetBrush( wxBrush( tenderColor ) );
+        }
+        else
+            dc.SetBrush( *wxTRANSPARENT_BRUSH );
+        
+            
 
         dc.DrawPolygon( 6, &ownship_icon[0], 0, 0 );
 
@@ -1091,11 +1097,15 @@ void tender_pi::RenderIconGL( )
             static const GLint s_ownship_icon[] = { 5, -42, 11, -28, 11, 42, -11, 42,
             -11, -28, -5, -42, -11, 0, 11, 0,
             0, 42, 0, -42       };
+
+            glColor4ub(0, 255, 0, 255);
             
             glVertexPointer(2, GL_INT, 2*sizeof(GLint), s_ownship_icon);
-            glDrawArrays(GL_POLYGON, 0, 6);
             
-            glColor4ub(255, 0, 0, 255);
+            if(pos_valid)
+                glDrawArrays(GL_POLYGON, 0, 6);
+            
+            glColor4ub(0, 0, 0, 255);
             glLineWidth(2);
             
             glDrawArrays(GL_LINE_LOOP, 0, 6);
@@ -1158,8 +1168,7 @@ bool tender_pi::RenderOverlay(wxDC &dc, PlugIn_ViewPort *vp)
 #endif
     
     //Render
-    if(pos_valid)
-        RenderIconDC( dc );
+    RenderIconDC( dc );
     
         
 #if wxUSE_GRAPHICS_CONTEXT
@@ -1172,6 +1181,13 @@ bool tender_pi::RenderOverlay(wxDC &dc, PlugIn_ViewPort *vp)
                        m_pBrgRolloverWin->GetPosition().x,
                        m_pBrgRolloverWin->GetPosition().y, false );
     }
+ 
+    if( m_pTrackRolloverWin && m_pTrackRolloverWin->IsActive() ) {
+        dc.DrawBitmap( *(m_pTrackRolloverWin->GetBitmap()),
+                       m_pTrackRolloverWin->GetPosition().x,
+                       m_pTrackRolloverWin->GetPosition().y, false );
+    }
+ 
 
 #endif
 
@@ -1190,14 +1206,26 @@ bool tender_pi::RenderGLOverlay(wxGLContext *pcontext, PlugIn_ViewPort *vp)
     m_select->SetSelectLLRadius(selec_radius);
     
     //Render
-    if(pos_valid)
-        RenderIconGL(  );
+    RenderIconGL(  );
 
     if( m_pBrgRolloverWin && m_pBrgRolloverWin->IsActive() ) {
         wxImage image = m_pBrgRolloverWin->GetBitmap()->ConvertToImage();
         unsigned char *imgdata = image.GetData();
         if(imgdata){
             glRasterPos2i(m_pBrgRolloverWin->GetPosition().x, m_pBrgRolloverWin->GetPosition().y);
+            
+            glPixelZoom(1.0, -1.0);
+            glDrawPixels(image.GetWidth(), image.GetHeight(), GL_RGB, GL_UNSIGNED_BYTE,imgdata);
+            glPixelZoom(1.0, 1.0);
+        }
+        
+    }
+
+    if( m_pTrackRolloverWin && m_pTrackRolloverWin->IsActive() ) {
+        wxImage image = m_pTrackRolloverWin->GetBitmap()->ConvertToImage();
+        unsigned char *imgdata = image.GetData();
+        if(imgdata){
+            glRasterPos2i(m_pTrackRolloverWin->GetPosition().x, m_pTrackRolloverWin->GetPosition().y);
             
             glPixelZoom(1.0, -1.0);
             glDrawPixels(image.GetWidth(), image.GetHeight(), GL_RGB, GL_UNSIGNED_BYTE,imgdata);
@@ -1337,8 +1365,8 @@ bool tender_pi::LoadConfig( void )
         
         
         // Qualify the input
-        m_tenderLength = wxMax(20, m_tenderLength);
-        m_tenderWidth = wxMax(10, m_tenderWidth);
+        m_tenderLength = wxMax(1, m_tenderLength);
+        m_tenderWidth = wxMax(1, m_tenderWidth);
         
         bool bfound = false;
         for(unsigned int i=0 ; i < g_iconTypeArray.Count() ; i++){
@@ -2082,7 +2110,7 @@ void PI_EventHandler::OnEvtOCPN_NMEA( PI_OCPN_DataStreamEvent& event )
 //                         m_fixtime = now.GetTicks();
 //                     }
                     pos_valid = ll_valid;
-                    
+                    gGPS_Watchdog = 0;          // feed the dog
                     m_parent->ProcessTenderFix();
                     
                     
@@ -2102,7 +2130,7 @@ void PI_EventHandler::OnEvtOCPN_NMEA( PI_OCPN_DataStreamEvent& event )
                     if( !wxIsNaN(g_NMEA0183.Hdt.DegreesTrue) )
                     {
                       //  g_bHDT_Rx = true;
-                     //   gHDT_Watchdog = gps_watchdog_timeout_ticks;
+                        gHDT_Watchdog = 0;
                     }
                 }
             }
